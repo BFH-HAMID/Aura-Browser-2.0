@@ -1,0 +1,73 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Aura Browser 2.0 — Docker Compose
+#
+#  Starts:
+#    • searxng   — your own private SearXNG aggregator (the search core)
+#    • aura      — Aura Browser 2.0 (Node.js/Express frontend + API)
+#
+#  Usage:
+#    docker compose up -d --build
+#    → Aura:  http://localhost:3000
+#    → SearXNG: http://localhost:8080
+#
+#  The bundled searxng/settings.yml is deliberately minimal & privacy-hardened
+#  (JSON format enabled, limiter on, bot detection on). Tweak it freely —
+#  SearXNG reads it read-only from this directory via the bind mount.
+# ═══════════════════════════════════════════════════════════════════════════
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: aura-searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-data:/etc/searxng
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"
+
+  aura:
+    build: .
+    container_name: aura-browser
+    restart: unless-stopped
+    depends_on:
+      - searxng
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Inside the compose network, SearXNG is reachable by service name.
+      - SEARXNG_URL=http://searxng:8080
+      # ── Optional free LLM keys (leave empty for the offline extractive AI) ──
+      - GROQ_API_KEY=
+      - GROQ_MODEL=llama-3.3-70b-versatile
+      - HF_TOKEN=
+      - HF_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+      # ── Optional static outbound proxy (also configurable in-app) ─────────
+      # - PROXY_PROTOCOL=socks5
+      # - PROXY_HOST=my-proxy.example.com
+      # - PROXY_PORT=1080
+      # - PROXY_USERNAME=
+      # - PROXY_PASSWORD=
+      - FALLBACK_ENGINE=ddg-html
+    # .env keys are forwarded when present (docker compose picks up .env
+    # automatically for variable substitution, but we also pass them through):
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  searxng-data:
