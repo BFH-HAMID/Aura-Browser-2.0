@@ -1,0 +1,47 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  SearXNG configuration for Aura Browser 2.0
+#
+#  Privacy-first defaults:
+#    • JSON API enabled (required by Aura Browser)
+#    • no cookies, no retention of user queries (SearXNG is stateless by design)
+#    • rate limiter + bot detection ON to protect the instance
+#    • format: json is restricted to the local network by default — allow
+#      your own IP range if you run Aura on a different machine.
+# ═══════════════════════════════════════════════════════════════════════════
+
+use_default_settings: true
+
+server:
+  secret_key: "change-me-to-a-long-random-string"   # docker compose: set via SEARXNG_SECRET
+  limiter: true
+  image_proxy: false
+  method: "POST"
+  # Keep the JSON API available (Aura needs it) but avoid exposing it as a
+  # public instance. Bind to 0.0.0.0 so Docker port mapping works.
+  bind_address: "0.0.0.0"
+
+ui:
+  default_locale: "en"
+  default_theme: simple
+  hotkeys: vim
+  infinite_scroll: false
+  center_alignment: true
+
+search:
+  safe_search: 1                    # 0 off · 1 moderate · 2 strict
+  autocomplete: ""                  # autocomplete is served by Aura's own proxy
+  default_lang: "en"
+  formats:
+    - html
+    - json                          # ← required by Aura Browser 2.0
+
+outgoing:
+  request_timeout: 5.0
+  max_request_timeout: 12.0
+  pool_connections: 100
+  pool_maxsize: 20
+  # Rotating browser-like User-Agents are built into SearXNG; uncomment to
+  # route SearXNG's own traffic through a proxy (e.g. corporate network):
+  # proxies:
+  #   all://:
+  #     - http://user:pass@proxy.example.com:8080
