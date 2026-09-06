@@ -29,6 +29,7 @@ const {
   isValidHttpUrl,
 } = require('../utils/normalize');
 const { generateSummary } = require('./llm');
+const { assessLinkSafety } = require('../utils/linkSafety');
 
 // ---------------------------------------------------------------------------
 // Category → SearXNG categories / engines mapping (feature 4)
@@ -55,7 +56,16 @@ const PUBLIC_SEARXNG = [
 // ---------------------------------------------------------------------------
 // 1. Direct SearXNG JSON API
 // ---------------------------------------------------------------------------
-async function searxngSearch({ query, category = 'all', language = 'en', region = '', safesearch = 1, page = 1 }) {
+function buildSearxngParams({
+  query,
+  category = 'all',
+  language = 'en',
+  region = '',
+  safesearch = 1,
+  page = 1,
+  engines = [],
+  timeRange = '',
+}) {
   const cat = CATEGORY_MAP[category] || CATEGORY_MAP.all;
   const params = new URLSearchParams({
     q: query,
@@ -65,10 +75,20 @@ async function searxngSearch({ query, category = 'all', language = 'en', region 
     safesearch: String(safesearch),
     pageno: String(Math.max(1, Number(page) || 1)),
   });
+  const requestedEngines = [...new Set((Array.isArray(engines) ? engines : String(engines || '').split(','))
+    .map((engine) => String(engine).trim())
+    .filter(Boolean))].slice(0, 12);
   if (region) params.set('region', region);
-  if (config.searxng.engines.length) params.set('engines', config.searxng.engines.join(','));
+  if (['day', 'week', 'month', 'year'].includes(timeRange)) params.set('time_range', timeRange);
+  if (requestedEngines.length) params.set('engines', requestedEngines.join(','));
+  else if (config.searxng.engines.length) params.set('engines', config.searxng.engines.join(','));
   else if (cat.engines) params.set('engines', cat.engines);
+  return params;
+}
 
+async function searxngSearch(options) {
+  const { query, category = 'all' } = options;
+  const params = buildSearxngParams(options);
   const url = `${config.searxng.url}/search?${params.toString()}`;
   const response = await safeFetch(url, {
     timeoutMs: config.searxng.timeoutMs,
@@ -200,6 +220,7 @@ async function runSearch(rawQuery, opts = {}) {
     safesearch = 1,
     page = 1,
     engines = '',
+    timeRange = '',
   } = opts;
 
   const { bang, query } = parseBang(rawQuery);
@@ -248,6 +269,8 @@ async function runSearch(rawQuery, opts = {}) {
       region,
       safesearch,
       page,
+      engines: engineCandidates,
+      timeRange,
     });
     enginesUsed = [...new Set(rawResults.map((r) => r.engine))];
   } catch (err) {
@@ -265,6 +288,8 @@ async function runSearch(rawQuery, opts = {}) {
           language,
           safesearch: String(safesearch),
         });
+        if (engineCandidates.length) params.set('engines', engineCandidates.join(','));
+        if (['day', 'week', 'month', 'year'].includes(timeRange)) params.set('time_range', timeRange);
         const response = await safeFetch(`${instance}/search?${params}`, {
           timeoutMs: 9000,
           headers: { accept: 'application/json' },
@@ -311,6 +336,8 @@ async function runSearch(rawQuery, opts = {}) {
         region,
         safesearch,
         page,
+        engines: engineCandidates,
+        timeRange,
       });
       enginesUsed = [...new Set(rawResults.map((r) => r.engine))];
       source = 'searxng-visual';
@@ -325,7 +352,13 @@ async function runSearch(rawQuery, opts = {}) {
   // Enrich with domain/favicon metadata.
   const enriched = results.map((r) => {
     const { host } = parseUrlParts(r.url);
-    return { ...r, domain: extractDomain(host), host };
+    return {
+      ...r,
+      domain: extractDomain(host),
+      host,
+      // Local heuristic only; it does not send result URLs to a reputation API.
+      safety: assessLinkSafety(r.url),
+    };
   });
 
   // Related questions (feature 8) — only for text categories.
@@ -360,4 +393,4 @@ async function summarize(query, results) {
   return generateSummary(query, results);
 }
 
-module.exports = { runSearch, summarize, CATEGORY_MAP, searxngSearch, ddgHtmlSearch };
+module.exports = { runSearch, summarize, CATEGORY_MAP, buildSearxngParams, searxngSearch, ddgHtmlSearch };

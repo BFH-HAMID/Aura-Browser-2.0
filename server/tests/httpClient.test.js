@@ -4,9 +4,10 @@
  */
 'use strict';
 
+const http = require('node:http');
 const test = require('node:test');
 const assert = require('node:assert');
-const { isPrivateIpv4, isPrivateIpv6, assertPublicHost } = require('../utils/httpClient');
+const { safeFetch, isPrivateIpv4, isPrivateIpv6, assertPublicHost } = require('../utils/httpClient');
 
 test('isPrivateIpv4 classifies private/reserved ranges', () => {
   assert.strictEqual(isPrivateIpv4('127.0.0.1'), true);
@@ -33,4 +34,21 @@ test('assertPublicHost rejects private IPs and allows public ones', async () => 
   await assert.rejects(() => assertPublicHost('10.1.2.3'), /blocked private/i);
   // Public literal IPs pass the guard without DNS.
   assert.strictEqual(await assertPublicHost('8.8.8.8'), '8.8.8.8');
+});
+
+test('safeFetch follows redirects manually for a trusted configured endpoint', async (t) => {
+  const server = http.createServer((req, res) => {
+    if (req.url === '/start') {
+      res.writeHead(302, { location: '/done' });
+      return res.end();
+    }
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('redirect complete');
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+
+  const { port } = server.address();
+  const response = await safeFetch(`http://127.0.0.1:${port}/start`, { allowPrivate: true });
+  assert.strictEqual(await response.text(), 'redirect complete');
 });

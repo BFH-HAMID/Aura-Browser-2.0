@@ -63,9 +63,9 @@ const config = {
   fallbackEngine: process.env.FALLBACK_ENGINE || 'ddg-html',
 
   llm: {
-    provider: null, // resolved at runtime: groq | huggingface | extractive
-    groqApiKey: process.env.GROQ_API_KEY || '',
-    groqModel: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+    provider: null, // resolved at runtime: gemini | huggingface | extractive
+    geminiApiKey: process.env.GEMINI_API_KEY || '',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
     hfToken: process.env.HF_TOKEN || '',
     hfModel: process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3',
     timeoutMs: num(process.env.LLM_TIMEOUT_MS, 20000),
@@ -81,6 +81,18 @@ const config = {
 
   news: {
     rssUrl: process.env.NEWS_RSS_URL || 'https://news.google.com/rss',
+  },
+
+  // Translation defaults to MyMemory's keyless public endpoint. Set
+  // LIBRETRANSLATE_URL to your own LibreTranslate server for full control.
+  translation: {
+    libreTranslateUrl: (process.env.LIBRETRANSLATE_URL || '').replace(/\/+$/, ''),
+    libreTranslateApiKey: process.env.LIBRETRANSLATE_API_KEY || '',
+    myMemoryUrl: (process.env.MYMEMORY_TRANSLATE_URL || 'https://api.mymemory.translated.net/get').replace(/\/+$/, ''),
+  },
+
+  archive: {
+    waybackUrl: (process.env.WAYBACK_AVAILABLE_URL || 'https://archive.org/wayback/available').replace(/\/+$/, ''),
   },
 
   favicon: {

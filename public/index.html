@@ -302,7 +302,7 @@
 
         <!-- Data (features 10, 30) -->
         <div class="border-t border-slate-100 dark:border-slate-800 pt-4">
-          <label class="font-semibold block mb-1.5">💾 Local data <span class="text-xs font-normal text-slate-400">(all in your browser — localStorage)</span></label>
+          <label class="font-semibold block mb-1.5">💾 Local data <span class="text-xs font-normal text-slate-400">(stored only in your browser)</span></label>
           <div class="flex flex-wrap gap-2">
             <button id="open-bookmarks" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-xs font-medium">🔖 Bookmarks (<span id="bookmark-count">0</span>)</button>
             <button id="open-history" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 text-xs font-medium">🕘 History (<span id="history-count">0</span>)</button>
@@ -313,7 +313,7 @@
         <!-- About -->
         <div class="border-t border-slate-100 dark:border-slate-800 pt-4 text-xs text-slate-400 leading-relaxed">
           <b class="text-slate-600 dark:text-slate-300">Aura Browser 2.0</b> — free & open-source (GPL-3.0). Powered by SearXNG, DuckDuckGo,
-          Groq/HuggingFace (optional), Open-Meteo and Google News RSS. No accounts. No tracking. No logs.
+          Gemini/Hugging Face (optional), Open-Meteo and Google News RSS. No Aura account. No tracking. No logs.
         </div>
       </div>
     </div>
@@ -347,5 +347,7 @@
   <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] hidden px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-sm shadow-2xl"></div>
 
   <script src="/js/app.js" defer></script>
+  <!-- Free research, offline-library, and accessibility tools -->
+  <script src="/js/research-tools.js" defer></script>
 </body>
 </html>

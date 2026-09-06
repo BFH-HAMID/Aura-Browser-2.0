@@ -176,7 +176,7 @@ const pickUA = () => UA_POOL[Math.floor(Math.random() * UA_POOL.length)];
 
 /**
  * @param {string} url   absolute URL
- * @param {object} opts  { method, headers, body, timeoutMs, proxy, accept }
+ * @param {object} opts  { method, headers, body, timeoutMs, proxy, maxRedirects }
  * @returns {Promise<Response>} undici Response (call .json()/.text()/.arrayBuffer())
  */
 async function safeFetch(url, opts = {}) {
@@ -188,47 +188,86 @@ async function safeFetch(url, opts = {}) {
     proxy: explicitProxy = null,
     formData,
     allowPrivate = false, // trust admin-configured endpoints (own SearXNG etc.)
+    maxRedirects = 5,
   } = opts;
 
-  // 1. SSRF guard — resolve the host and verify it is public.
-  let hostname;
-  try {
-    hostname = new URL(url).hostname;
-  } catch {
-    throw new Error(`Invalid URL: ${url.slice(0, 80)}`);
-  }
-  if (!allowPrivate) await assertPublicHost(hostname);
-
-  // 2. Choose proxy (explicit > runtime panel > env).
+  // 1. Choose proxy (explicit > runtime panel > env).
   const proxy = explicitProxy || runtimeProxy || envProxy();
-
-  // 3. Fire the request with a timeout.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('Request timed out')), timeoutMs);
+  const redirectStatuses = new Set([301, 302, 303, 307, 308]);
+  const cancelResponseBody = async (response) => {
+    try { await response.body?.cancel?.(); } catch { /* nothing to clean up */ }
+  };
+  let target = String(url);
+  let requestMethod = method;
+  let requestBody = formData || body;
 
-  const response = await undiciFetch(url, {
-    method,
-    headers: {
-      'user-agent': pickUA(),
-      accept: headers.accept || 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
-      'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
-      ...(headers || {}),
-    },
-    ...(body !== undefined ? { body } : {}),
-    ...(formData ? { body: formData } : {}),
-    signal: controller.signal,
-    dispatcher: buildDispatcher(proxy),
-    redirect: 'follow',
-  }).finally(() => clearTimeout(timer));
+  try {
+    // Follow redirects ourselves so that every hop is checked by the SSRF guard.
+    for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount++) {
+      let parsed;
+      try {
+        parsed = new URL(target);
+      } catch {
+        throw new Error(`Invalid URL: ${target.slice(0, 80)}`);
+      }
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Only http(s) URLs are allowed');
+      }
+      if (!allowPrivate) await assertPublicHost(parsed.hostname);
 
-  // 4. Counters (content-free stats only).
-  if (proxy) {
-    increment('requestsProxied');
-    stats.trackersBlocked += 1; // proxied request = one tracker-cookie-blocked trip
-  } else {
-    increment('requestsDirect');
+      const response = await undiciFetch(parsed, {
+        method: requestMethod,
+        headers: {
+          'user-agent': pickUA(),
+          accept: headers.accept || 'text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8',
+          'accept-language': 'en-US,en;q=0.9,bn;q=0.8',
+          ...(headers || {}),
+        },
+        ...(requestBody !== undefined ? { body: requestBody } : {}),
+        signal: controller.signal,
+        dispatcher: buildDispatcher(proxy),
+        redirect: 'manual',
+      });
+
+      const location = response.headers.get('location');
+      if (!redirectStatuses.has(response.status) || !location) {
+        // Count one logical outbound request, never content or target details.
+        if (proxy) {
+          increment('requestsProxied');
+          stats.trackersBlocked += 1; // proxied request = one tracker-cookie-blocked trip
+        } else {
+          increment('requestsDirect');
+        }
+        return response;
+      }
+
+      if (redirectCount === maxRedirects) {
+        await cancelResponseBody(response);
+        throw new Error('Too many redirects');
+      }
+      try {
+        target = new URL(location, parsed).href;
+      } catch {
+        await cancelResponseBody(response);
+        throw new Error('Redirect target is invalid');
+      }
+      await cancelResponseBody(response);
+
+      // Mirror fetch's common redirect behavior for body-bearing requests.
+      if (response.status === 303 ||
+        ((response.status === 301 || response.status === 302) && !['GET', 'HEAD'].includes(String(requestMethod).toUpperCase()))) {
+        requestMethod = 'GET';
+        requestBody = undefined;
+      }
+    }
+  } finally {
+    clearTimeout(timer);
   }
-  return response;
+
+  // The loop either returns or throws. This satisfies static flow analysis.
+  throw new Error('Request could not be completed');
 }
 
 module.exports = {

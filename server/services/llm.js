@@ -1,21 +1,24 @@
 /**
- * Aura Browser 2.0 — free LLM integration.
+ * Aura Browser 2.0 — AI integration.
  *
  * Feature 1 : AI Summary Box (synthesized answer card above results).
  * Feature 21: RAG chatbot sidepanel (search results injected as context).
  *
- * Provider priority (all free):
- *   1. Groq — blazing fast, generous free tier (llama-3.x). Needs GROQ_API_KEY.
- *   2. Hugging Face Inference API — free token required (HF_TOKEN).
+ * Provider priority (all optional):
+ *   1. Gemini — Google Gemini Interactions API in stateless mode. Needs GEMINI_API_KEY.
+ *   2. Hugging Face Inference API — needs HF_TOKEN.
  *   3. Extractive summarizer — 100% offline fallback, zero keys: extracts the
  *      most informative sentences from result snippets. Always works.
  *
- * This module performs NO logging of prompts or responses.
+ * This module performs NO logging of prompts or responses. Gemini requests set
+ * `store: false`, so Aura does not create retained Gemini Interaction records.
  */
 'use strict';
 
 const config = require('../config');
 const { safeFetch } = require('../utils/httpClient');
+
+const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
 const SYSTEM_BASE =
   'You are Aura, a helpful assistant inside Aura Browser 2.0, a privacy-first meta-search engine. ' +
@@ -26,41 +29,90 @@ const SYSTEM_BASE =
 // Provider resolution
 // ---------------------------------------------------------------------------
 function resolveProvider() {
-  if (config.llm.groqApiKey) return 'groq';
+  if (config.llm.geminiApiKey) return 'gemini';
   if (config.llm.hfToken) return 'huggingface';
   return 'extractive';
 }
 
 // ---------------------------------------------------------------------------
-// Groq (OpenAI-compatible chat completions)
+// Gemini Interactions API
 // ---------------------------------------------------------------------------
-async function groqComplete(messages, { maxTokens = 500, temperature = 0.4 } = {}) {
-  const response = await safeFetch('https://api.groq.com/openai/v1/chat/completions', {
+/**
+ * Convert Aura's OpenAI-style chat history into the stateless Interactions API
+ * input format. `store: false` is intentional: Aura keeps no server-side
+ * session and does not ask Gemini to retain an Interaction record.
+ */
+function buildGeminiRequest(messages, { maxTokens = 500, temperature = 0.4 } = {}) {
+  const history = Array.isArray(messages) ? messages : [];
+  const systemInstruction = history
+    .filter((message) => message?.role === 'system' && String(message.content || '').trim())
+    .map((message) => String(message.content).trim())
+    .join('\n\n');
+
+  const input = history
+    .filter((message) => message?.role !== 'system' && String(message?.content || '').trim())
+    .map((message) => ({
+      type: message.role === 'assistant' ? 'model_output' : 'user_input',
+      content: [{ type: 'text', text: String(message.content).trim() }],
+    }));
+
+  if (!input.length) {
+    throw new Error('Gemini requires at least one user or assistant message');
+  }
+
+  const request = {
+    model: config.llm.geminiModel,
+    input,
+    // The Interactions API otherwise stores interactions by default.
+    store: false,
+    generation_config: {
+      max_output_tokens: maxTokens,
+      temperature,
+    },
+  };
+  if (systemInstruction) request.system_instruction = systemInstruction;
+  return request;
+}
+
+/** Return text from both the convenience field and the raw interaction steps. */
+function extractGeminiText(data) {
+  const outputText = data?.output_text ?? data?.outputText;
+  if (typeof outputText === 'string' && outputText.trim()) return outputText.trim();
+
+  const text = (data?.steps || [])
+    .filter((step) => step?.type === 'model_output')
+    .flatMap((step) => step.content || [])
+    .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+    .map((part) => part.text)
+    .join('')
+    .trim();
+  return text;
+}
+
+async function geminiComplete(messages, { maxTokens = 500, temperature = 0.4 } = {}) {
+  const response = await safeFetch(GEMINI_INTERACTIONS_URL, {
     method: 'POST',
     timeoutMs: config.llm.timeoutMs,
     headers: {
-      authorization: `Bearer ${config.llm.groqApiKey}`,
+      'x-goog-api-key': config.llm.geminiApiKey,
       'content-type': 'application/json',
+      accept: 'application/json',
     },
-    body: JSON.stringify({
-      model: config.llm.groqModel,
-      messages,
-      max_tokens: maxTokens,
-      temperature,
-    }),
+    body: JSON.stringify(buildGeminiRequest(messages, { maxTokens, temperature })),
   });
   if (!response.ok) {
-    throw new Error(`Groq API error ${response.status}`);
+    throw new Error(`Gemini API error ${response.status}`);
   }
   const data = await response.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  const text = extractGeminiText(data);
+  if (!text) throw new Error('Gemini returned no text response');
+  return text;
 }
 
 // ---------------------------------------------------------------------------
 // Hugging Face Inference API (text-generation)
 // ---------------------------------------------------------------------------
 async function huggingfaceComplete(messages) {
-  const last = messages[messages.length - 1]?.content || '';
   const prompt = [
     messages[0]?.role === 'system' ? messages[0].content : SYSTEM_BASE,
     ...messages.slice(1).map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`),
@@ -185,8 +237,8 @@ async function generateSummary(query, results) {
 
   try {
     const summary =
-      provider === 'groq'
-        ? await groqComplete(messages)
+      provider === 'gemini'
+        ? await geminiComplete(messages)
         : await huggingfaceComplete(messages);
     return { provider, summary };
   } catch {
@@ -217,8 +269,8 @@ async function chatTurn(history, context) {
 
   try {
     const content =
-      provider === 'groq'
-        ? await groqComplete(messages, { maxTokens: 600, temperature: 0.7 })
+      provider === 'gemini'
+        ? await geminiComplete(messages, { maxTokens: 600, temperature: 0.7 })
         : await huggingfaceComplete(messages);
     return { provider, content };
   } catch {
@@ -227,4 +279,11 @@ async function chatTurn(history, context) {
   }
 }
 
-module.exports = { generateSummary, chatTurn, resolveProvider, extractiveSummarize };
+module.exports = {
+  resolveProvider,
+  generateSummary,
+  chatTurn,
+  extractiveSummarize,
+  buildGeminiRequest,
+  extractGeminiText,
+};
