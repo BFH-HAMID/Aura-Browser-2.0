@@ -51,11 +51,12 @@ services:
       - HOST=0.0.0.0
       # Inside the compose network, SearXNG is reachable by service name.
       - SEARXNG_URL=http://searxng:8080
-      # ── Optional free LLM keys (leave empty for the offline extractive AI) ──
-      - GROQ_API_KEY=
-      - GROQ_MODEL=llama-3.3-70b-versatile
-      - HF_TOKEN=
-      - HF_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+      # ── Optional AI keys (leave empty for the offline extractive AI) ───────
+      # Values from .env or the shell are forwarded without baking secrets into the image.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_MODEL=${HF_MODEL:-mistralai/Mistral-7B-Instruct-v0.3}
       # ── Optional static outbound proxy (also configurable in-app) ─────────
       # - PROXY_PROTOCOL=socks5
       # - PROXY_HOST=my-proxy.example.com

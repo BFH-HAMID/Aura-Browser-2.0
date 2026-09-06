@@ -174,7 +174,7 @@ router.get('/bangs', (_req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/config', (_req, res) => {
   res.json({
-    llmProvider: config.llm.groqApiKey ? 'groq' : config.llm.hfToken ? 'huggingface' : 'extractive',
+    llmProvider: config.llm.geminiApiKey ? 'gemini' : config.llm.hfToken ? 'huggingface' : 'extractive',
     searxngConfigured: Boolean(process.env.SEARXNG_URL),
     fallbackEngine: config.fallbackEngine,
     faviconProvider: config.favicon.provider,

@@ -2,7 +2,7 @@
 
 **The 100% free, zero-tracking hybrid meta-search engine & privacy browser web app.**
 
-Aura Browser 2.0 aggregates **SearXNG** (self-hosted, open-source) + **DuckDuckGo Instant Answers** + free endpoints behind a single privacy gateway: **no accounts, no cookies, no logs, no tracking — ever.**
+Aura Browser 2.0 aggregates **SearXNG** (self-hosted, open-source) + **DuckDuckGo Instant Answers** + free endpoints behind a single privacy gateway: **no Aura account, no cookies, no logs, no tracking — ever.**
 
 ![stack](https://img.shields.io/badge/stack-Node.js%20%2B%20Express%20%2B%20Tailwind%20%2B%20SearXNG-8b5cf6) ![license](https://img.shields.io/badge/license-GPL--3.0-blue)
 
@@ -12,7 +12,7 @@ Aura Browser 2.0 aggregates **SearXNG** (self-hosted, open-source) + **DuckDuckG
 
 | # | Feature | Where |
 |---|---------|-------|
-| 1 | **AI Summary Box** (Groq / Hugging Face / offline extractive) | `server/services/llm.js`, `public/js/app.js` |
+| 1 | **AI Summary Box** (Gemini / Hugging Face / offline extractive) | `server/services/llm.js`, `public/js/app.js` |
 | 2 | **Smart Result De-duplication** (URL normalization + fuzzy title matching) | `server/utils/normalize.js` |
 | 3 | **Zero-Tracking Privacy Mode** (stateless backend, nothing logged) | `server/index.js`, `server/utils/httpClient.js` |
 | 4 | **Categorized Tabs** (All / News / Images / Code / Scientific) | `server/services/searchService.js` |
@@ -59,7 +59,7 @@ aura-browser-2.0/
 │   │   └── proxy.js             # proxy panel + reverse image upload
 │   ├── services/
 │   │   ├── searchService.js     # SearXNG + DDG fallback orchestration
-│   │   ├── llm.js               # Groq / HF / extractive AI (summary + RAG)
+│   │   ├── llm.js               # Gemini / HF / extractive AI (summary + RAG)
 │   │   ├── widgets.js           # weather, trending, favicons
 │   │   └── fetcher.js           # reading-mode extraction
 │   ├── utils/
@@ -97,7 +97,7 @@ git clone https://github.com/BFH-HAMID/Aura-Browser-2.0.git
 cd Aura-Browser-2.0
 
 # 2. Configure (optional)
-cp .env.example .env          # add GROQ_API_KEY / HF_TOKEN for real AI answers
+cp .env.example .env          # add GEMINI_API_KEY / HF_TOKEN for real AI answers
 
 # 3. Build & launch SearXNG + Aura Browser
 docker compose up -d --build
@@ -138,15 +138,15 @@ SEARXNG_URL=http://localhost:8080 npm start   # terminal 2 — Aura on :3000
 
 ---
 
-## 🛰️ Configuring the free AI (Features 1 & 21)
+## 🛰️ Configuring AI (Features 1 & 21)
 
 | Provider | Key | Model |
 |----------|-----|-------|
-| **Groq** (recommended — fast, generous free tier) | `GROQ_API_KEY` from [console.groq.com](https://console.groq.com) | `GROQ_MODEL=llama-3.3-70b-versatile` |
+| **Gemini** (recommended) | `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_MODEL=gemini-3.8-flash` |
 | **Hugging Face** | `HF_TOKEN` from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `HF_MODEL=mistralai/Mistral-7B-Instruct-v0.3` |
 | **None** | — | Built-in offline **extractive** summarizer (always works, zero keys) |
 
-Aura automatically picks the best configured provider and **degrades gracefully** — if the LLM is down, you still get an extractive summary. **No prompt/query data is ever logged.**
+Aura selects Gemini first when `GEMINI_API_KEY` is set, then Hugging Face, then the local extractive fallback. Gemini uses the current Interactions API with `store: false`, so Aura does not create retained Gemini Interaction records. Aura itself never logs prompts or responses; a selected cloud provider still processes requests under its own terms.
 
 ## 🛰️ Proxy & Tunneling (Feature 31)
 
@@ -160,7 +160,7 @@ You can also configure SearXNG's own outbound proxy in `searxng/settings.yml` �
 ## 🔒 Privacy Model
 
 - **Stateless backend** — no DB, no log files, no cookies, no sessions.
-- Request **content is never logged**; only anonymous in-memory counters feed the tracker widget (reset on restart).
+- Request **content is never logged** by Aura; only anonymous in-memory counters feed the tracker widget (reset on restart). Cloud AI is optional; Gemini calls explicitly use `store: false`.
 - **SSRF guard** blocks fetches to private/loopback/link-local IPs (protects the reading-mode proxy).
 - Rate limiter is a pure in-memory counter (configurable via `ENABLE_RATE_LIMIT`).
 - Frontend state (theme, accent, bookmarks, history, language, region) lives **only in your browser's localStorage**.
@@ -180,7 +180,7 @@ You can also configure SearXNG's own outbound proxy in `searxng/settings.yml` �
 ## 🧪 Tests
 
 ```bash
-npm test        # node:test — de-dup, bangs, operators, math, SSRF guard
+npm test        # node:test — LLM request shaping, de-dup, bangs, operators, math, SSRF guard
 ```
 
 ## 🛠 Development
