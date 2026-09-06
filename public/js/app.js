@@ -451,16 +451,25 @@ async function doSearch() {
 
   state.query = raw;
   const seq = ++searchSeq;
+  // Optional research-tool filters are supplied by public/js/research-tools.js.
+  // Keep the base search fully usable when that enhancement script is unavailable.
+  const researchOptions = window.AuraResearch?.getSearchOptions?.(raw) || {};
+  const searchQuery = researchOptions.query || raw;
   const params = new URLSearchParams({
-    q: raw,
+    q: searchQuery,
     category: state.category,
     language: state.language,
     safesearch: state.safesearch ? '2' : '0',
   });
   if (state.region) params.set('region', `${state.region.toLowerCase()}-${langSuffix(state.language)}`);
+  if (researchOptions.timeRange) params.set('time_range', researchOptions.timeRange);
+  if (Array.isArray(researchOptions.engines) && researchOptions.engines.length) {
+    params.set('engines', researchOptions.engines.join(','));
+  }
 
   // UI reset
   hideSuggestions();
+  state.aiSummary = '';
   $('#ai-summary').classList.add('hidden');
   $('#math-widget').classList.add('hidden');
   $('#related-section').classList.add('hidden');
@@ -504,6 +513,7 @@ async function doSearch() {
     state.related = data.related || [];
     state.chatContext = buildChatContext(data.results);
     renderResults(data);
+    document.dispatchEvent(new CustomEvent('aura:results', { detail: { results: data.results, query: raw } }));
 
     // Status line (feature 2/3 transparency)
     const engineList = (data.engines || []).slice(0, 5).join(', ') || 'searxng';
@@ -570,6 +580,7 @@ async function loadAiSummary(query, results) {
     if (!res.ok) throw new Error('summary failed');
     const data = await res.json();
     box.classList.remove('hidden');
+    state.aiSummary = data.summary || '';
     body.innerHTML = renderMarkdown(data.summary);
     $('#ai-provider').textContent = data.provider === 'extractive' ? 'local extractive' : data.provider;
   } catch {
@@ -970,6 +981,7 @@ async function openReader(url) {
       <h1 class="text-2xl font-extrabold mb-2">${escapeHtml(data.title || '')}</h1>
       ${data.byline ? `<p class="text-sm text-slate-400 mb-4">By ${escapeHtml(data.byline)}</p>` : ''}
       ${data.contentHtml || `<p class="text-slate-400">${escapeHtml(data.excerpt || 'No readable content found.')}</p>`}`;
+    document.dispatchEvent(new CustomEvent('aura:reader', { detail: data }));
   } catch (err) {
     content.innerHTML = `<p class="text-rose-500">Could not load reading view: ${escapeHtml(err.message)}<br>
       <a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="text-accent underline">Open the original page instead ↗</a></p>`;
@@ -1358,7 +1370,19 @@ function initModalsAndControls() {
     toast('🗑 History cleared');
   });
 
-  // Search submit paths.
+  // Search/reader/chat extension hooks. Enhancement scripts use events rather
+  // than reaching into this file's private state.
+  document.addEventListener('aura:request-search', doSearch);
+  document.addEventListener('aura:open-reader', (event) => {
+    const url = String(event.detail?.url || '');
+    if (/^https?:\/\//i.test(url)) openReader(url);
+  });
+  document.addEventListener('aura:ask-text', (event) => {
+    const text = String(event.detail?.text || '').trim().slice(0, 3000);
+    if (!text) return;
+    $('#chat-input').value = `Explain this text clearly and concisely:\n\n${text}`;
+    sendChatMessage();
+  });
   $('#search-btn').addEventListener('click', doSearch);
   $('#search-input').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {

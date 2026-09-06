@@ -7,7 +7,12 @@
  * /api/suggest           → DDG autocomplete proxy (feature 7)
  * /api/weather           → real-time weather widget (feature 25)
  * /api/trending          → trending topics & news (feature 27)
- * /api/fetch             → reading-mode preview (feature 13)
+ * /api/fetch             → reading-mode preview + metadata (feature 13)
+ * /api/rss               → RSS/Atom feed parsing (research tool)
+ * /api/translate         → keyless/self-hosted text translation (research tool)
+ * /api/archive           → Wayback snapshot lookup (research tool)
+ * /api/safety            → local link safety/privacy assessment
+ * /api/ocr               → memory-only English/Bengali image OCR
  * /api/stats             → tracker counter (feature 29)
  * /api/bangs             → bang shortcut registry (feature 22)
  *
@@ -16,22 +21,27 @@
 'use strict';
 
 const express = require('express');
+const multer = require('multer');
 const config = require('../config');
 const { runSearch, summarize } = require('../services/searchService');
 const { chatTurn } = require('../services/llm');
 const { getWeather, getTrending } = require('../services/widgets');
 const { fetchReadable } = require('../services/fetcher');
-const { getStats } = require('../utils/httpClient');
+const { fetchFeed, translateText, findArchive } = require('../services/freeTools');
+const { recognizeImage } = require('../services/ocr');
+const { getStats, safeFetch } = require('../utils/httpClient');
 const { bangList } = require('../utils/normalize');
-const { safeFetch } = require('../utils/httpClient');
+const { assessLinkSafety } = require('../utils/linkSafety');
 
 const router = express.Router();
+const researchToolErrorStatus = (error) =>
+  Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 502;
 
 // ---------------------------------------------------------------------------
 // GET /api/search — core search endpoint
 // ---------------------------------------------------------------------------
 router.get('/search', async (req, res) => {
-  const { q, category, language, region, safesearch, page, engines } = req.query;
+  const { q, category, language, region, safesearch, page, engines, time_range: timeRange } = req.query;
   if (!q || !String(q).trim()) {
     return res.status(400).json({ error: 'Missing query parameter "q"' });
   }
@@ -43,6 +53,7 @@ router.get('/search', async (req, res) => {
       safesearch: Number(safesearch) || 1,
       page: Number(page) || 1,
       engines: String(engines || ''),
+      timeRange: String(timeRange || ''),
     });
     res.json(data);
   } catch (err) {
@@ -156,6 +167,74 @@ router.get('/fetch', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/rss — privacy-safe RSS/Atom reader proxy (research tool)
+// ---------------------------------------------------------------------------
+router.get('/rss', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'Missing feed URL' });
+  try {
+    res.json(await fetchFeed(String(url)));
+  } catch (err) {
+    res.status(researchToolErrorStatus(err)).json({ error: err.message, items: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/translate — keyless/public translation with self-hosted override
+// ---------------------------------------------------------------------------
+router.post('/translate', express.json({ limit: '32kb' }), async (req, res) => {
+  const { text, source = 'en', target = 'bn' } = req.body || {};
+  try {
+    res.json(await translateText(text, source, target));
+  } catch (err) {
+    res.status(researchToolErrorStatus(err)).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/archive — closest Internet Archive snapshot for a result URL
+// ---------------------------------------------------------------------------
+router.get('/archive', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'Missing URL' });
+  try {
+    res.json(await findArchive(String(url)));
+  } catch (err) {
+    res.status(researchToolErrorStatus(err)).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/safety — local, explainable link privacy/safety heuristic
+// ---------------------------------------------------------------------------
+router.get('/safety', (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'Missing URL' });
+  res.json(assessLinkSafety(String(url)));
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/ocr — in-memory Tesseract OCR (English and Bengali)
+// ---------------------------------------------------------------------------
+const ocrUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
+});
+const OCR_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+router.post('/ocr', ocrUpload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image file first' });
+  if (!OCR_MIME_TYPES.has(String(req.file.mimetype || '').toLowerCase())) {
+    return res.status(400).json({ error: 'Use a PNG, JPEG, WebP, or GIF image for OCR' });
+  }
+  try {
+    res.json(await recognizeImage(req.file.buffer, req.body?.language || 'eng'));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/stats — live privacy counter (feature 29)
 // ---------------------------------------------------------------------------
 router.get('/stats', (_req, res) => {
@@ -179,6 +258,16 @@ router.get('/config', (_req, res) => {
     fallbackEngine: config.fallbackEngine,
     faviconProvider: config.favicon.provider,
   });
+});
+
+// Multer errors occur before the OCR handler. Keep malformed/oversize uploads
+// client-visible without leaking internals or falling through as a 500.
+router.use((err, _req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    const status = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json({ error: status === 413 ? 'OCR images are limited to 8 MB' : 'Invalid OCR upload' });
+  }
+  next(err);
 });
 
 module.exports = router;

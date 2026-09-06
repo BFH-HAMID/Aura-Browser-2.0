@@ -1,7 +1,7 @@
 /**
  * Aura Browser 2.0 — Tailwind configuration.
  * Dark mode is class-based (toggled on <html>), content scanned from
- * public/index.html and public/js/app.js.
+ * public/index.html and all frontend JavaScript, including research tools.
  */
 /** @type {import('tailwindcss').Config} */
 module.exports = {

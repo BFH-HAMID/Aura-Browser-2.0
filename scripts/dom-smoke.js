@@ -15,6 +15,7 @@ const { JSDOM } = require('jsdom');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
 const appJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+const researchToolsJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'research-tools.js'), 'utf8');
 
 const dom = new JSDOM(html, {
   url: 'http://localhost:3000/',
@@ -25,6 +26,7 @@ const { window } = dom;
 const { document } = window;
 
 // --- minimal browser API shims -------------------------------------------
+let lastSearchRequest = '';
 window.fetch = async (url) => {
   // Real browsers resolve relative URLs before fetch; jsdom passes them raw.
   const u = String(new URL(String(url), window.location.href));
@@ -35,7 +37,9 @@ window.fetch = async (url) => {
   if (u.includes('/api/trending')) return json({ items: [] });
   if (u.includes('/api/weather')) return json({ city: 'Test', unit: '°C', current: { temperature_2m: 21 }, wmo: { icon: '☀️', label: 'Sunny' } });
   if (u.includes('/api/suggest')) return json({ suggestions: ['quantum computing'] });
+  if (u.includes('/api/chat')) return json({ content: 'Selected-text explanation' });
   if (u.includes('/api/search')) {
+    lastSearchRequest = u;
     let params;
     try { params = new URLSearchParams(new URL(u).search); } catch (e) { throw new Error('mock URL parse: ' + e.message + ' :: ' + u); }
     const q = params.get('q') || '';
@@ -91,8 +95,9 @@ window.console.error = (...a) => errors.push('console:' + a.map(String).join(' '
 // --- execute app -----------------------------------------------------------
 try {
   window.eval(appJs);
+  window.eval(researchToolsJs);
 } catch (err) {
-  console.error('✗ app.js threw during evaluation:', err.message);
+  console.error('✗ frontend script threw during evaluation:', err.message);
   process.exit(1);
 }
 
@@ -108,8 +113,10 @@ setTimeout(() => {
     if (!cond) failed++;
   };
 
-  // 1. Theme init.
+  // 1. Theme + research controls initialize.
   check('theme toggle wired', document.getElementById('theme-toggle') !== null);
+  check('research controls initialize', document.getElementById('aura-research-controls') !== null);
+  check('research search hook is available', typeof window.AuraResearch?.getSearchOptions === 'function');
 
   // 2. Typing a query shows suggestions + bang chip.
   const input = document.getElementById('search-input');
@@ -139,21 +146,57 @@ setTimeout(() => {
       check('bookmark saved to localStorage', bookmarks.length === 1);
       check('bookmark counter updated', document.getElementById('bookmark-count').textContent === '1');
 
-      // 6. Math widget (feature 6).
-      input.value = '12*5+3';
-      input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      // 6. Research result tools render and open a citation without a remote call.
+      const citationButton = cards[0]?.querySelector('[data-research-act="cite"]');
+      check('research actions added to result cards', !!citationButton);
+      citationButton?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      check('citation tool opens', document.getElementById('research-modal-title').textContent.includes('Citation'));
+      document.getElementById('research-modal-close')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      document.dispatchEvent(new window.CustomEvent('aura:ask-text', { detail: { text: 'A focused research excerpt.' } }));
+      check('selected-text hook starts Aura chat', document.getElementById('chat-messages').textContent.includes('focused research excerpt'));
+      document.dispatchEvent(new window.CustomEvent('aura:reader', { detail: { url: 'https://example.org/article', title: 'Example article' } }));
+      check('reader offers offline library save', !!document.getElementById('reader-save-offline'));
+      const readerTranslate = document.getElementById('reader-translate-full');
+      check('reader offers page-excerpt translation', !!readerTranslate);
+      readerTranslate?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      check('reader translation tool opens', document.getElementById('research-modal-title').textContent.includes('Translate'));
+      document.getElementById('research-modal-close')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      document.getElementById('open-research-hub')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      check('research hub opens', document.getElementById('research-modal-title').textContent.includes('Offline library'));
+      check('research hub offers offline library', !!document.querySelector('[data-hub="library"]'));
+      document.getElementById('research-modal-close')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+
+      // 7. Advanced filters request the primary search through the public event.
+      document.getElementById('toggle-advanced-filters')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      const domainFilter = document.getElementById('filter-domain');
+      const timeFilter = document.getElementById('filter-time-range');
+      domainFilter.value = 'example.org';
+      domainFilter.dispatchEvent(new window.Event('change', { bubbles: true }));
+      timeFilter.value = 'week';
+      timeFilter.dispatchEvent(new window.Event('change', { bubbles: true }));
+      document.getElementById('apply-advanced-filters')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
       setTimeout(() => {
-        check('math widget visible', !document.getElementById('math-widget').classList.contains('hidden'));
-        check('math result correct', document.getElementById('math-widget').textContent.includes('63'));
+        const filteredParams = new URL(lastSearchRequest).searchParams;
+        check('advanced domain filter is forwarded', filteredParams.get('q').includes('site:example.org'));
+        check('advanced freshness filter is forwarded', filteredParams.get('time_range') === 'week');
+        document.getElementById('clear-advanced-filters')?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 
-        // 7. History recorded.
-        const history = JSON.parse(window.localStorage.getItem('aura.history') || '[]');
-        check('history recorded', history.length >= 2);
-        check('no runtime JS errors', errors.length === 0);
+        // 8. Math widget (feature 6).
+        input.value = '12*5+3';
+        input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        setTimeout(() => {
+          check('math widget visible', !document.getElementById('math-widget').classList.contains('hidden'));
+          check('math result correct', document.getElementById('math-widget').textContent.includes('63'));
 
-        console.log(failed === 0 ? '\n✅ ALL DOM SMOKE CHECKS PASSED' : `\n❌ ${failed} CHECK(S) FAILED`);
-        process.exit(failed === 0 ? 0 : 1);
-      }, 80);
+          // 9. History recorded.
+          const history = JSON.parse(window.localStorage.getItem('aura.history') || '[]');
+          check('history recorded', history.length >= 3);
+          check('no runtime JS errors', errors.length === 0);
+
+          console.log(failed === 0 ? '\n✅ ALL DOM SMOKE CHECKS PASSED' : `\n❌ ${failed} CHECK(S) FAILED`);
+          process.exit(failed === 0 ? 0 : 1);
+        }, 80);
+      }, 120);
     }, 120);
   }, 60);
 }, 80);

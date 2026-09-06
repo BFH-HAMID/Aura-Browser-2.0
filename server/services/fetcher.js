@@ -29,7 +29,7 @@ const JUNK_SELECTORS = [
 /**
  * Fetch + extract readable content.
  * @param {string} url target URL
- * @returns {Promise<{title, byline, domain, content, excerpt, url}>}
+ * @returns {Promise<{title, byline, domain, contentHtml, excerpt, wordCount, readingTimeMinutes, url}>}
  */
 async function fetchReadable(url) {
   // SSRF guard + URL sanity.
@@ -67,6 +67,22 @@ async function fetchReadable(url) {
     $('meta[name="description"]').attr('content') ||
     $('meta[property="og:description"]').attr('content') ||
     '';
+  const published =
+    $('meta[property="article:published_time"]').attr('content') ||
+    $('meta[name="date"]').attr('content') ||
+    $('time[datetime]').first().attr('datetime') ||
+    '';
+  const canonicalRaw =
+    $('link[rel="canonical"]').attr('href') ||
+    $('meta[property="og:url"]').attr('content') ||
+    url;
+  let canonicalUrl = url;
+  try {
+    const candidate = new URL(canonicalRaw, url);
+    if (candidate.protocol === 'http:' || candidate.protocol === 'https:') canonicalUrl = candidate.href;
+  } catch {
+    /* keep the requested URL */
+  }
 
   // Choose the best content container.
   const candidates = $('article, main, [role="main"], .post, .entry-content, .article, .content')
@@ -104,7 +120,10 @@ async function fetchReadable(url) {
   });
 
   const contentHtml = $content.html() || '';
-  const excerpt = ($content.text() || '').replace(/\s+/g, ' ').trim().slice(0, 320);
+  const contentText = ($content.text() || '').replace(/\s+/g, ' ').trim();
+  const excerpt = contentText.slice(0, 320);
+  const wordCount = contentText ? contentText.split(/\s+/).filter(Boolean).length : 0;
+  const readingTimeMinutes = wordCount ? Math.max(1, Math.ceil(wordCount / 220)) : 0;
 
   let domain;
   try {
@@ -117,11 +136,14 @@ async function fetchReadable(url) {
     title: String(title).trim().slice(0, 300),
     byline: String(byline).trim().slice(0, 120),
     description: String(description).trim().slice(0, 400),
+    published: String(published).trim().slice(0, 120),
+    canonicalUrl,
     domain,
     url,
     contentHtml: contentHtml.slice(0, 500_000),
     excerpt,
-    wordCount: excerpt ? excerpt.split(/\s+/).length : 0,
+    wordCount,
+    readingTimeMinutes,
   };
 }
 

@@ -83,6 +83,18 @@ const config = {
     rssUrl: process.env.NEWS_RSS_URL || 'https://news.google.com/rss',
   },
 
+  // Translation defaults to MyMemory's keyless public endpoint. Set
+  // LIBRETRANSLATE_URL to your own LibreTranslate server for full control.
+  translation: {
+    libreTranslateUrl: (process.env.LIBRETRANSLATE_URL || '').replace(/\/+$/, ''),
+    libreTranslateApiKey: process.env.LIBRETRANSLATE_API_KEY || '',
+    myMemoryUrl: (process.env.MYMEMORY_TRANSLATE_URL || 'https://api.mymemory.translated.net/get').replace(/\/+$/, ''),
+  },
+
+  archive: {
+    waybackUrl: (process.env.WAYBACK_AVAILABLE_URL || 'https://archive.org/wayback/available').replace(/\/+$/, ''),
+  },
+
   favicon: {
     provider: process.env.FAVICON_PROVIDER || 'duckduckgo', // duckduckgo | google | none
   },

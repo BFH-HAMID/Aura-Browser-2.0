@@ -5,15 +5,16 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --no-audit --no-fund
+# Scripts require source files that are copied in the build stage.
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Compile Tailwind CSS and vendor the client-side QR library.
+# Compile Tailwind CSS and vendor client-side PDF/OCR assets locally.
 RUN npx tailwindcss -i ./public/css/input.css -o ./public/css/app.css --minify \
- && node scripts/vendor-qrcode.js
+ && npm run vendor
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production

@@ -13,6 +13,7 @@ const config = require('./config');
 const apiRoutes = require('./routes/api');
 const proxyRoutes = require('./routes/proxy');
 const { render } = require('./utils/template');
+const { closeOcrWorker } = require('./services/ocr');
 
 const app = express();
 app.disable('x-powered-by');
@@ -24,7 +25,7 @@ app.use((_req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-  res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(self)');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(self), camera=(self)');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   next();
 });
@@ -101,6 +102,8 @@ const server = app.listen(config.server.port, config.server.host, () => {
 // Graceful shutdown.
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {
+    // OCR owns an in-memory worker process; terminate it with the server.
+    closeOcrWorker().catch(() => {});
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 1500).unref();
   });
