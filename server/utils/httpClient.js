@@ -138,16 +138,57 @@ function buildDispatcher(proxy) {
   if (!proxy) {
     dispatcher = new Agent({ keepAliveTimeout: 10000, pipelining: 4 });
   } else if (proxy.protocol.startsWith('socks')) {
-    dispatcher = new ProxyAgent({
-      factory: () =>
-        new SocksProxyAgent({
-          hostname: proxy.host,
-          port: Number(proxy.port),
-          userId: proxy.username || undefined,
-          password: proxy.password || undefined,
-          protocol: proxy.protocol === 'socks5' ? 'socks5:' : 'socks4:',
-        }),
-    });
+    // SOCKS proxy: undici ProxyAgent does not support socks:// directly.
+    // We build a custom undici Agent whose connect() dials through SOCKS
+    // using the `socks` library (dependency of socks-proxy-agent).
+    try {
+      const { SocksClient } = require('socks');
+      const socksType = proxy.protocol === 'socks4' ? 4 : 5;
+      const socksProxy = {
+        host: proxy.host,
+        port: Number(proxy.port),
+        type: socksType,
+        userId: proxy.username || undefined,
+        password: proxy.password || undefined,
+      };
+      dispatcher = new Agent({
+        keepAliveTimeout: 10000,
+        pipelining: 4,
+        connect: async (opts, callback) => {
+          try {
+            const { socket } = await SocksClient.createConnection({
+              proxy: socksProxy,
+              destination: {
+                host: opts.host,
+                port: Number(opts.port),
+              },
+              command: 'connect',
+              timeout: 15000,
+            });
+            if (opts.protocol === 'https:' || opts.secureEndpoint) {
+              const tls = require('node:tls');
+              const tlsSocket = tls.connect({
+                socket,
+                host: opts.host,
+                servername: opts.host,
+                rejectUnauthorized: false,
+              });
+              callback(null, tlsSocket);
+            } else {
+              callback(null, socket);
+            }
+          } catch (err) {
+            callback(err);
+          }
+        },
+      });
+    } catch {
+      // Fallback to previous behaviour if `socks` package is unavailable
+      dispatcher = new ProxyAgent({
+        uri: `http://${proxy.host}:${proxy.port}`,
+        requestTls: { rejectUnauthorized: false },
+      });
+    }
   } else {
     dispatcher = new ProxyAgent({
       uri: `http://${proxy.username ? encodeURIComponent(proxy.username) + ':' + encodeURIComponent(proxy.password || '') + '@' : ''}${proxy.host}:${proxy.port}`,

@@ -178,7 +178,7 @@ SEARXNG_URL=http://localhost:8080 npm start   # terminal 2 — Aura on :3000
 
 | Provider | Key | Model |
 |----------|-----|-------|
-| **Gemini** (recommended) | `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_MODEL=gemini-3.8-flash` |
+| **Gemini** (recommended) | `GEMINI_API_KEY` from [Google AI Studio](https://aistudio.google.com/apikey) | `GEMINI_MODEL=gemini-3.5-flash-lite` (fast & cheap) or `gemini-3.6-flash` (balanced) |
 | **Hugging Face** | `HF_TOKEN` from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) | `HF_MODEL=mistralai/Mistral-7B-Instruct-v0.3` |
 | **None** | — | Built-in offline **extractive** summarizer (always works, zero keys) |
 
