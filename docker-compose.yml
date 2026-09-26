@@ -54,7 +54,7 @@ services:
       # ── Optional AI keys (leave empty for the offline extractive AI) ───────
       # Values from .env or the shell are forwarded without baking secrets into the image.
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.8-flash}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
       - HF_TOKEN=${HF_TOKEN:-}
       - HF_MODEL=${HF_MODEL:-mistralai/Mistral-7B-Instruct-v0.3}
       # ── Optional static outbound proxy (also configurable in-app) ─────────

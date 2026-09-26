@@ -65,7 +65,7 @@ const config = {
   llm: {
     provider: null, // resolved at runtime: gemini | huggingface | extractive
     geminiApiKey: process.env.GEMINI_API_KEY || '',
-    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.8-flash',
+    geminiModel: process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite',
     hfToken: process.env.HF_TOKEN || '',
     hfModel: process.env.HF_MODEL || 'mistralai/Mistral-7B-Instruct-v0.3',
     timeoutMs: num(process.env.LLM_TIMEOUT_MS, 20000),

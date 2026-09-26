@@ -1,0 +1,82 @@
+# Render.com Blueprint for Aura Browser 2.0
+# Eta diye ek click e 2ta service deploy hobe:
+# 1. aura-searxng — private SearXNG (Docker)
+# 2. aura-browser — Node.js app (Express + frontend)
+#
+# Deploy: Render Dashboard > New > Blueprint > Connect this repo
+# Doc: https://docs.render.com/blueprint-spec
+
+services:
+  # ----------------------------------------------------------------
+  # SearXNG — self-hosted, privacy-hardened aggregator
+  # ----------------------------------------------------------------
+  - type: web
+    name: aura-searxng
+    runtime: docker
+    dockerfilePath: ./Dockerfile.searxng
+    dockerContext: .
+    plan: free
+    healthCheckPath: /healthz
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: SEARXNG_BASE_URL
+        value: https://aura-searxng.onrender.com
+    # SearXNG free tier e 512MB RAM, enough
+
+  # ----------------------------------------------------------------
+  # Aura Browser 2.0 — Node.js frontend + API
+  # ----------------------------------------------------------------
+  - type: web
+    name: aura-browser
+    runtime: node
+    plan: free
+    # Render free te 512MB RAM, 0.5 CPU — enough for Aura (OCR first run e ektu slow)
+    buildCommand: npm install --include=dev && npm run build:css && npm run vendor
+    startCommand: npm start
+    healthCheckPath: /api/config
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      # PORT Render auto set kore, config.js e PORT env theke ney
+      - key: SEARXNG_URL
+        # Private network e service name diye connect — fast + free internal traffic
+        # Jodi private network na thake, tahole public URL use koro:
+        # value: https://aura-searxng.onrender.com
+        value: http://aura-searxng:8080
+      - key: SEARXNG_TIMEOUT_MS
+        value: 15000
+      - key: FALLBACK_ENGINE
+        value: ddg-html
+      - key: SEARXNG_PUBLIC_FALLBACK
+        value: false
+      - key: LLM_TIMEOUT_MS
+        value: 20000
+      - key: ENABLE_RATE_LIMIT
+        value: true
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 120
+      - key: BLOCK_PRIVATE_URLS
+        value: true
+      - key: FAVICON_PROVIDER
+        value: duckduckgo
+      # --- Optional AI keys — Render Dashboard e set korba ---
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash-lite
+        # Alternative (higher quality): gemini-3.6-flash
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_MODEL
+        value: mistralai/Mistral-7B-Instruct-v0.3
+      # --- Optional proxy ---
+      # - key: PROXY_PROTOCOL
+      #   value: socks5
+      # - key: PROXY_HOST
+      #   value: my-proxy.com
+      # - key: PROXY_PORT
+      #   value: 1080

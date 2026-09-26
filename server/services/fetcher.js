@@ -47,8 +47,8 @@ async function fetchReadable(url) {
   }
 
   const html = (await res.text()).slice(0, MAX_BYTES);
-  const { parseDocument } = require('cheerio');
-  const $ = parseDocument(html);
+  const cheerio = require('cheerio');
+  const $ = cheerio.load(html);
 
   // Remove junk first.
   $(JUNK_SELECTORS.join(',')).remove();

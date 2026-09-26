@@ -85,28 +85,32 @@ app.use((err, _req, res, _next) => {
 });
 
 // ---------------------------------------------------------------------------
-// Boot
+// Export for Vercel / serverless, Boot for local/Docker
 // ---------------------------------------------------------------------------
-const server = app.listen(config.server.port, config.server.host, () => {
-  const addr = server.address();
-  console.log('┌──────────────────────────────────────────────────────────┐');
-  console.log('│  Aura Browser 2.0 — privacy meta-search engine           │');
-  console.log('└──────────────────────────────────────────────────────────┘');
-  console.log(`  →  http://${addr.address}:${addr.port}`);
-  console.log(`  →  SearXNG:      ${config.searxng.url}`);
-  console.log(`  →  LLM provider: ${config.llm.geminiApiKey ? 'gemini' : config.llm.hfToken ? 'huggingface' : 'extractive (offline)'}`);
-  console.log(`  →  Outbound:     ${config.proxy.host ? `proxied via ${config.proxy.protocol}://${config.proxy.host}:${config.proxy.port}` : 'direct (no static proxy)'}`);
-  console.log('  Zero-tracking mode: ON — nothing is stored or logged.\n');
-});
+module.exports = app;
 
-// Graceful shutdown.
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    // OCR owns an in-memory worker process; terminate it with the server.
-    closeOcrWorker().catch(() => {});
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 1500).unref();
+let server;
+if (require.main === module) {
+  server = app.listen(config.server.port, config.server.host, () => {
+    const addr = server.address();
+    console.log('┌──────────────────────────────────────────────────────────┐');
+    console.log('│  Aura Browser 2.0 — privacy meta-search engine           │');
+    console.log('└──────────────────────────────────────────────────────────┘');
+    console.log(`  →  http://${addr.address}:${addr.port}`);
+    console.log(`  →  SearXNG:      ${config.searxng.url}`);
+    console.log(`  →  LLM provider: ${config.llm.geminiApiKey ? 'gemini' : config.llm.hfToken ? 'huggingface' : 'extractive (offline)'}`);
+    console.log(`  →  Outbound:     ${config.proxy.host ? `proxied via ${config.proxy.protocol}://${config.proxy.host}:${config.proxy.port}` : 'direct (no static proxy)'}`);
+    console.log('  Zero-tracking mode: ON — nothing is stored or logged.\n');
   });
+
+  // Graceful shutdown.
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => {
+      closeOcrWorker().catch(() => {});
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1500).unref();
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,12 @@
+# Aura Browser 2.0 — SearXNG hardened image for Render.com
+# Uses the official SearXNG image + our privacy-hardened settings.yml
+FROM searxng/searxng:latest
+
+# Copy our hardened config (JSON enabled, limiter on, bot detection on)
+COPY searxng/settings.yml /etc/searxng/settings.yml
+
+# SearXNG runs on 8080 by default, Render expects 10000 for Docker?
+# Render auto detects port, but we expose both for safety
+EXPOSE 8080 10000
+
+# SearXNG image already has entrypoint, no need to override
